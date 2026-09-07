@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Greggantic Phrase Search</title>
+<style>
+body{font-family:Arial,sans-serif;margin:0;background:#f5f5f5;color:#222}
+.wrap{max-width:900px;margin:auto;padding:24px}
+h1{text-align:center;margin:8px 0 22px}
+textarea{width:100%;height:130px;padding:14px;border:1px solid #bbb;border-radius:10px;box-sizing:border-box;font-size:18px}
+button{margin-top:10px;padding:11px 18px;border:0;border-radius:8px;background:#222;color:white;font-size:15px}
+#status{margin:15px 0;color:#666}
+.card{background:#fff;border-radius:10px;padding:16px;margin:10px 0;border:1px solid #ddd}
+.term{font-weight:bold;font-size:18px}
+.type{font-size:12px;color:#777;margin:4px 0 10px}
+a{color:#1558a6;word-break:break-all}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Greggantic Search</h1>
+<textarea id="input" placeholder="Example: Dear Sir, I am ready to do things now."></textarea>
+<button onclick="searchText()">Search Greggantic</button>
+<div id="status"></div>
+<div id="results"></div>
+</div>
+<script>
+const API="https://www.greggantic.com/dictionary";
+function clean(s){return s.toLowerCase().replace(/[“”"'`]/g,"").replace(/\s+/g," ").trim()}
+function candidates(text){
+  const w=text.replace(/[.,!?;:()[\]{}]/g," ").split(/\s+/).filter(Boolean);
+  const out=[];
+  for(let n=Math.min(8,w.length);n>=1;n--){
+    for(let i=0;i+n<=w.length;i++) out.push(w.slice(i,i+n).join(" "));
+  }
+  return [...new Set(out)];
+}
+async function searchText(){
+ const raw=document.getElementById("input").value.trim();
+ const results=document.getElementById("results");
+ const status=document.getElementById("status");
+ results.innerHTML="";
+ if(!raw){status.textContent="Type a word, phrase, or sentence.";return}
+ status.textContent="Opening Greggantic searches...";
+ const terms=candidates(raw);
+ for(const term of terms){
+   const url=API+"?q="+encodeURIComponent(term);
+   const card=document.createElement("div");card.className="card";
+   card.innerHTML='<div class="term">'+term.replace(/</g,"&lt;")+'</div>'+
+                 '<div class="type">'+(term.includes(" ")?"Phrase":"Word")+'</div>'+
+                 '<a target="_blank" rel="noopener" href="'+url+'">Search this exact term on Greggantic ↗</a>';
+   results.appendChild(card);
+ }
+ status.textContent="Generated "+terms.length+" exact Greggantic search links. Click a result to view the actual entry.";
+}
+</script>
+</body>
+</html>
