@@ -3,57 +3,286 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Greggantic Phrase Search</title>
+<title>Gregg Phrase Translator</title>
 <style>
-body{font-family:Arial,sans-serif;margin:0;background:#f5f5f5;color:#222}
-.wrap{max-width:900px;margin:auto;padding:24px}
-h1{text-align:center;margin:8px 0 22px}
-textarea{width:100%;height:130px;padding:14px;border:1px solid #bbb;border-radius:10px;box-sizing:border-box;font-size:18px}
-button{margin-top:10px;padding:11px 18px;border:0;border-radius:8px;background:#222;color:white;font-size:15px}
-#status{margin:15px 0;color:#666}
-.card{background:#fff;border-radius:10px;padding:16px;margin:10px 0;border:1px solid #ddd}
-.term{font-weight:bold;font-size:18px}
-.type{font-size:12px;color:#777;margin:4px 0 10px}
-a{color:#1558a6;word-break:break-all}
+  body{font-family:Arial,sans-serif;margin:0;background:#f5f5f5;color:#222}
+  .wrap{max-width:1000px;margin:auto;padding:24px}
+  h1{text-align:center}
+  .controls{display:flex;gap:10px;justify-content:center;margin:16px 0}
+  button{padding:10px 16px;border:1px solid #aaa;border-radius:8px;background:#fff;cursor:pointer}
+  button.active{background:#222;color:#fff}
+  textarea{box-sizing:border-box;width:100%;min-height:130px;padding:14px;border:1px solid #bbb;border-radius:10px;font-size:18px}
+  #output{display:flex;flex-wrap:wrap;gap:12px;margin-top:20px}
+  .card{background:#fff;border:1px solid #ddd;border-radius:10px;padding:12px;min-width:130px;text-align:center}
+  .label{font-size:13px;color:#555;margin-bottom:7px}
+  .outline{max-width:250px;min-height:65px}
+  .word-box{position:relative;width:365px;height:100px;overflow:hidden;border:1px solid #222}
+  .word-box img{position:absolute;max-width:none;visibility:hidden}
+  .status{width:100%;text-align:center;color:#666;padding:20px}
+  .source{font-size:11px;color:#777;margin-top:6px}
 </style>
 </head>
 <body>
 <div class="wrap">
-<h1>Greggantic Search</h1>
-<textarea id="input" placeholder="Example: Dear Sir, I am ready to do things now."></textarea>
-<button onclick="searchText()">Search Greggantic</button>
-<div id="status"></div>
-<div id="results"></div>
+  <h1>Gregg Phrase Translator</h1>
+
+  <div class="controls">
+    <button id="anniversary" class="active">Gregg Anniversary</button>
+    <button id="simplified">Gregg Simplified</button>
+  </div>
+
+  <textarea id="input" placeholder="Try: Dear Sir&#10;Try: As soon as possible"></textarea>
+  <div id="output"><div class="status">Loading dictionary…</div></div>
 </div>
-<script>
-const API="https://www.greggantic.com/dictionary";
-function clean(s){return s.toLowerCase().replace(/[“”"'`]/g,"").replace(/\s+/g," ").trim()}
-function candidates(text){
-  const w=text.replace(/[.,!?;:()[\]{}]/g," ").split(/\s+/).filter(Boolean);
-  const out=[];
-  for(let n=Math.min(8,w.length);n>=1;n--){
-    for(let i=0;i+n<=w.length;i++) out.push(w.slice(i,i+n).join(" "));
+
+<script type="module">
+import * as pdfjsLib from
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
+
+/*
+  PHRASE DATABASE
+
+  Coordinates are measured from your phrasebook.pdf.
+  Add more verified phrases here in the same format.
+
+  page = PDF page number
+  x, y, w, h = crop location for the Gregg outline
+*/
+const phraseDatabase = {
+  "dear sir": {
+    page: 18,
+    crop: { x: 345, y: 310, w: 42, h: 27 }
+  },
+  "as soon as": {
+    page: 14,
+    crop: { x: 48, y: 274, w: 35, h: 30 }
   }
-  return [...new Set(out)];
+};
+
+const PHRASEBOOK_URL = "./phrasebook.pdf";
+const REPO_BASE =
+  "https://raw.githubusercontent.com/richyliu/greggdict/master/assets/";
+
+const dictionaries = {
+  Anniversary: {
+    reference: REPO_BASE + "Anniversary/reference.json",
+    pages: REPO_BASE + "Anniversary/pages/"
+  },
+  Simplified: {
+    reference: REPO_BASE + "Simplified/reference.json",
+    pages: REPO_BASE + "Simplified/pages/"
+  }
+};
+
+let currentDictionary = "Anniversary";
+let dictionary = {};
+let simplifiedDictionary = {};
+let phrasebookPromise = null;
+
+function buildDictionary(data) {
+  const result = {};
+  data.forEach(pageData => {
+    pageData.words.forEach(entry => {
+      result[entry.t.toLowerCase().trim()] = {
+        word: entry.t,
+        page: pageData.page,
+        x: entry.x,
+        y: entry.y
+      };
+    });
+  });
+  return result;
 }
-async function searchText(){
- const raw=document.getElementById("input").value.trim();
- const results=document.getElementById("results");
- const status=document.getElementById("status");
- results.innerHTML="";
- if(!raw){status.textContent="Type a word, phrase, or sentence.";return}
- status.textContent="Opening Greggantic searches...";
- const terms=candidates(raw);
- for(const term of terms){
-   const url=API+"?q="+encodeURIComponent(term);
-   const card=document.createElement("div");card.className="card";
-   card.innerHTML='<div class="term">'+term.replace(/</g,"&lt;")+'</div>'+
-                 '<div class="type">'+(term.includes(" ")?"Phrase":"Word")+'</div>'+
-                 '<a target="_blank" rel="noopener" href="'+url+'">Search this exact term on Greggantic ↗</a>';
-   results.appendChild(card);
- }
- status.textContent="Generated "+terms.length+" exact Greggantic search links. Click a result to view the actual entry.";
+
+async function loadDictionary(type) {
+  showStatus("Loading " + type + " dictionary…");
+
+  const response = await fetch(dictionaries[type].reference);
+  const data = await response.json();
+  const newDictionary = buildDictionary(data);
+
+  if (type === "Simplified") {
+    dictionary = newDictionary;
+    simplifiedDictionary = newDictionary;
+  } else {
+    dictionary = newDictionary;
+
+    if (!Object.keys(simplifiedDictionary).length) {
+      const fallback = await fetch(dictionaries.Simplified.reference);
+      simplifiedDictionary = buildDictionary(await fallback.json());
+    }
+  }
+
+  currentDictionary = type;
+  renderText();
 }
+
+function getWordEntry(term) {
+  let entry = dictionary[term];
+  let source = currentDictionary;
+
+  if (!entry && currentDictionary === "Anniversary") {
+    entry = simplifiedDictionary[term];
+    if (entry) source = "Simplified";
+  }
+
+  return { entry, source };
+}
+
+function clean(text) {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function findLongestPhrase(words, start) {
+  for (let size = Math.min(8, words.length - start); size >= 2; size--) {
+    const phrase = words.slice(start, start + size).join(" ");
+    if (phraseDatabase[phrase]) {
+      return { phrase, size, record: phraseDatabase[phrase] };
+    }
+  }
+  return null;
+}
+
+async function getPhrasebook() {
+  if (!phrasebookPromise) {
+    phrasebookPromise = pdfjsLib.getDocument(PHRASEBOOK_URL).promise;
+  }
+  return phrasebookPromise;
+}
+
+async function createPhraseCard(phrase, record) {
+  const card = document.createElement("div");
+  card.className = "card";
+  card.innerHTML =
+    `<div class="label">${phrase}</div>
+     <div class="source">Phrase Book</div>`;
+
+  const pdf = await getPhrasebook();
+  const pdfPage = await pdf.getPage(record.page);
+  const scale = 3;
+  const viewport = pdfPage.getViewport({ scale });
+
+  const fullPage = document.createElement("canvas");
+  fullPage.width = viewport.width;
+  fullPage.height = viewport.height;
+
+  await pdfPage.render({
+    canvasContext: fullPage.getContext("2d"),
+    viewport
+  }).promise;
+
+  const { x, y, w, h } = record.crop;
+  const outline = document.createElement("canvas");
+  outline.className = "outline";
+  outline.width = w * scale;
+  outline.height = h * scale;
+
+  outline.getContext("2d").drawImage(
+    fullPage,
+    x * scale, y * scale, w * scale, h * scale,
+    0, 0, w * scale, h * scale
+  );
+
+  card.insertBefore(outline, card.children[1]);
+  return card;
+}
+
+function createWordCard(word) {
+  const card = document.createElement("div");
+  card.className = "card";
+  card.innerHTML = `<div class="label">${word}</div>`;
+
+  const { entry, source } = getWordEntry(word);
+
+  if (!entry) {
+    card.innerHTML += `<div class="source">No outline found</div>`;
+    return card;
+  }
+
+  const box = document.createElement("div");
+  box.className = "word-box";
+
+  const image = document.createElement("img");
+  image.src =
+    dictionaries[source].pages + entry.page + ".png?word=" +
+    encodeURIComponent(entry.word);
+
+  image.onload = () => {
+    const displayWidth = 365;
+    const displayHeight = 100;
+    const imageWidth = 1281;
+    const scale = imageWidth / image.naturalWidth;
+
+    image.style.width = imageWidth + "px";
+    image.style.left = -(entry.x * scale - 5) + "px";
+    image.style.top =
+      -(entry.y * scale - displayHeight / 2) + "px";
+    image.style.visibility = "visible";
+  };
+
+  box.appendChild(image);
+  card.appendChild(box);
+
+  if (source !== currentDictionary) {
+    card.innerHTML += `<div class="source">Simplified fallback</div>`;
+  }
+
+  return card;
+}
+
+async function renderText() {
+  const output = document.getElementById("output");
+  const words = clean(document.getElementById("input").value).split(" ").filter(Boolean);
+
+  if (!words.length) {
+    showStatus("Type a word, phrase, or sentence.");
+    return;
+  }
+
+  output.innerHTML = "";
+
+  for (let index = 0; index < words.length;) {
+    const match = findLongestPhrase(words, index);
+
+    if (match) {
+      output.appendChild(
+        await createPhraseCard(match.phrase, match.record)
+      );
+      index += match.size;
+    } else {
+      output.appendChild(createWordCard(words[index]));
+      index++;
+    }
+  }
+}
+
+function showStatus(message) {
+  document.getElementById("output").innerHTML =
+    `<div class="status">${message}</div>`;
+}
+
+document.getElementById("input").addEventListener("input", renderText);
+
+document.getElementById("anniversary").addEventListener("click", async () => {
+  document.getElementById("anniversary").classList.add("active");
+  document.getElementById("simplified").classList.remove("active");
+  await loadDictionary("Anniversary");
+});
+
+document.getElementById("simplified").addEventListener("click", async () => {
+  document.getElementById("simplified").classList.add("active");
+  document.getElementById("anniversary").classList.remove("active");
+  await loadDictionary("Simplified");
+});
+
+loadDictionary("Anniversary");
 </script>
 </body>
 </html>
